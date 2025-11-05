@@ -1,7 +1,9 @@
 package com.sky.service;
 
+import com.sky.dto.EmployeeDTO;
 import com.sky.dto.EmployeeLoginDTO;
 import com.sky.entity.Employee;
+import org.apache.ibatis.annotations.Insert;
 
 public interface EmployeeService {
 
@@ -12,4 +14,10 @@ public interface EmployeeService {
      */
     Employee login(EmployeeLoginDTO employeeLoginDTO);
 
+    /**
+     * 新增员工
+     * @param employeeDTO
+     */
+    @Insert("insert into employee (name)")
+    void save(EmployeeDTO employeeDTO);
 }
