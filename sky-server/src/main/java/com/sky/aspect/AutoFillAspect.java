@@ -3,6 +3,7 @@ package com.sky.aspect;
 import com.sky.annotation.AutoFill;
 import com.sky.constant.AutoFillConstant;
 import com.sky.context.BaseContext;
+import com.sky.entity.DishFlavor;
 import com.sky.enumeration.OperationType;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
@@ -14,6 +15,7 @@ import org.aspectj.lang.reflect.MethodSignature;
 
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * ClassName:AutoFillAspect
@@ -29,61 +31,71 @@ import java.time.LocalDateTime;
 @Component
 @Slf4j
 public class AutoFillAspect {
-    /**
-     * Pointcut
-     */
-    @Pointcut("execution(* com.sky.mapper.*.*(..)) && @annotation(com.sky.annotation.AutoFill)")
+
+    @Pointcut("@annotation(com.sky.annotation.AutoFill)")
     public void autoFillPointcut(){}
 
-    /**
-     * Use a before advice to assign values to common fields.
-     */
-    @Before("autoFillPointcut()")
-    public void autoFill(JoinPoint joinPoint) {
+    @Before("autoFillPointcut() && @annotation(autoFill)")
+    public void autoFill(JoinPoint joinPoint, AutoFill autoFill) {
         log.info("Start automatic filling of common fields...");
 
-        // Get the type of database operation on the currently intercepted method.
-        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-        AutoFill  autoFill = signature.getMethod().getAnnotation(AutoFill.class);
         OperationType operationType = autoFill.value();
 
-        // Get the argument (entity object) of the currently intercepted method.
         Object[] args = joinPoint.getArgs();
         if (args == null || args.length == 0) {
             return;
         }
 
-        Object entity = args[0];
+        Object arg = args[0];
 
-        // Prepare the data to be filled.
+        // ① 如果是 List —— 批量处理
+        if (arg instanceof List) {
+            List<?> list = (List<?>) arg;
+            for (Object entity : list) {
+                fillEntity(operationType, entity);
+            }
+            return;
+        }
+
+        // ② 如果是单个对象 —— 直接处理
+        fillEntity(operationType, arg);
+    }
+
+
+    /**
+     * 给单个实体对象填充字段
+     */
+    private void fillEntity(OperationType operationType, Object entity) {
+        if (entity instanceof DishFlavor) {
+            return; // 不对 DishFlavor 填充
+        }
+
         LocalDateTime now = LocalDateTime.now();
         Long currentId = BaseContext.getCurrentId();
 
-        // According to the current operation type, assign values to the corresponding attributes via reflection.
-        if (operationType == OperationType.INSERT) {
-            try {
-                Method setCreateTime = entity.getClass().getDeclaredMethod(AutoFillConstant.SET_CREATE_TIME, LocalDateTime.class);
-                Method setCreateUser = entity.getClass().getDeclaredMethod(AutoFillConstant.SET_CREATE_USER, Long.class);
-                Method setUpdateTime = entity.getClass().getDeclaredMethod(AutoFillConstant.SET_UPDATE_TIME, LocalDateTime.class);
-                Method setUpdateUser = entity.getClass().getDeclaredMethod(AutoFillConstant.SET_UPDATE_USER, Long.class);
+        Class<?> clazz = entity.getClass();
 
-                setCreateTime.invoke(entity, now);
-                setCreateUser.invoke(entity, currentId);
-                setUpdateTime.invoke(entity, now);
-                setUpdateUser.invoke(entity, currentId);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        } else if (operationType == OperationType.UPDATE) {
-            try {
-                Method setUpdateTime = entity.getClass().getDeclaredMethod(AutoFillConstant.SET_UPDATE_TIME, LocalDateTime.class);
-                Method setUpdateUser = entity.getClass().getDeclaredMethod(AutoFillConstant.SET_UPDATE_USER, Long.class);
+        try {
+            if (operationType == OperationType.INSERT) {
+                // setCreateTime
+                clazz.getDeclaredMethod(AutoFillConstant.SET_CREATE_TIME, LocalDateTime.class)
+                        .invoke(entity, now);
 
-                setUpdateTime.invoke(entity, now);
-                setUpdateUser.invoke(entity, currentId);
-            } catch (Exception e) {
-                e.printStackTrace();
+                // setCreateUser
+                clazz.getDeclaredMethod(AutoFillConstant.SET_CREATE_USER, Long.class)
+                        .invoke(entity, currentId);
             }
+
+            // INSERT 和 UPDATE 都要设置 update 字段
+            clazz.getDeclaredMethod(AutoFillConstant.SET_UPDATE_TIME, LocalDateTime.class)
+                    .invoke(entity, now);
+
+            clazz.getDeclaredMethod(AutoFillConstant.SET_UPDATE_USER, Long.class)
+                    .invoke(entity, currentId);
+
+        } catch (Exception e) {
+            log.error("AutoFill failed for entity: {}", entity, e);
         }
     }
 }
+

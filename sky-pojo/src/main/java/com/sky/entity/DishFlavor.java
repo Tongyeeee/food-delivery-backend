@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
 /**
  * 菜品口味
@@ -27,5 +28,4 @@ public class DishFlavor implements Serializable {
 
     //口味数据list
     private String value;
-
 }
